@@ -1,17 +1,15 @@
 import { Linking, Pressable, View } from 'react-native';
 import Constants from 'expo-constants';
-import { IS_SAMPLE } from '../data/content';
 import { F } from '../theme';
 import { Card, Eyebrow, Icon, Page, T, useColors, Wheel } from '../ui';
 
-// Source credits. tipitaka.lk granted use of the Sinhala translation, Roman script, dictionaries and AI (2026-09-24).
+// Credits for what ships. Add the English and dictionary lines when those packs land.
+// tipitaka.lk granted use of the Sinhala translation, Roman script, dictionaries and AI (2026-09-24).
 const CREDITS: [string, string][] = [
   ['Pāḷi text', 'Buddha Jayanti Tripiṭaka, from tipitaka.lk (CC BY-ND 4.0)'],
   ['Sinhala translation', 'Buddha Jayanti Tripiṭaka, from tipitaka.lk (CC BY-ND 4.0)'],
   ['Roman-script Pāḷi', 'Transliterated from the Sinhala-script edition, with permission'],
-  ['English', 'Bhikkhu Sujato / Bhikkhu Brahmali, SuttaCentral (CC0)'],
-  ['Pāḷi–Sinhala dictionaries', 'Buddhadatta and Sumaṅgala, via tipitaka.lk, with permission'],
-  ['Pāḷi–English dictionary', 'Digital Pāḷi Dictionary, Bodhirasa Bhikkhu (CC BY-NC-SA 4.0). Trimmed for this app'],
+  ['Texts are shown exactly as published', 'Report errors below and we pass them on to tipitaka.lk'],
   ['Typefaces', 'Noto Serif Sinhala, Abhaya Libre, Gentium Book Plus, Noto Serif (SIL OFL 1.1) · Material Symbols (Apache 2.0)'],
 ];
 
@@ -36,12 +34,6 @@ export default function About() {
       <View style={{ gap: 10 }}>
         <Eyebrow en="Texts & credits" si="මූලාශ්‍ර" />
         <Card style={{ paddingHorizontal: 16 }}>
-          {IS_SAMPLE ? (
-            <View style={{ paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: c.line }}>
-              <T f={F.pali} size={13} lh={1.4} color={c.acct}>This build</T>
-              <T f={F.pali} size={15.5} lh={1.5}>Sample texts for development only. The sources below arrive with the first data release.</T>
-            </View>
-          ) : null}
           {CREDITS.map(([k, v], i) => (
             <View key={k} style={{ paddingVertical: 13, borderTopWidth: i ? 1 : 0, borderTopColor: c.line }}>
               <T f={F.pali} size={13} lh={1.4} color={c.mut}>{k}</T>

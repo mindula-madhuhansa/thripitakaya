@@ -1,47 +1,78 @@
-import { useEffect, useRef, useState } from 'react';
-import { Animated, FlatList, Pressable, Text, TextInput, View, ViewToken } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, FlatList, Pressable, TextInput, View, ViewToken } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
-import { getSutta, hasText, IS_SAMPLE, lookup, neighbours, Node, Seg as Verse } from '../../data/content';
+import { toRoman, withZwj } from '@thripitakaya/shared';
+import {
+  available, chain, cite, footnotes, getNode, getText, isHeading, neighbours, plain, romanTitle, type Node, type Seg,
+} from '../../data/content';
+import { install, PACKS, usePacks } from '../../data/packs';
 import {
   listBookmarks, listHighlights, listNotes, recordHistory, saveNote, saveWord, setSettings, toggleBookmark,
   toggleHighlight, useSettings, useUserData,
 } from '../../db/user';
 import { ShareBody } from '../../share';
+import { Marked } from '../../text';
 import { F, FONT_STEPS, LINE_STEPS, SI_LINE_STEPS, SIZE_NAMES } from '../../theme';
-import { Btn, Eyebrow, Icon, IconBtn, IconName, Page, Seg, Sheet, T, Toggle, toast, useColors, Wheel } from '../../ui';
+import { Btn, Eyebrow, Icon, IconBtn, type IconName, Page, Seg as Segmented, Sheet, T, Toggle, toast, useColors, Wheel } from '../../ui';
 
-type SheetKind = 'word' | 'display' | 'verse' | 'note' | 'share' | null;
+type SheetKind = 'word' | 'display' | 'verse' | 'note' | 'share' | 'footnote' | null;
 const PUNCT = /[,;.!?'"‘’“”—–]/g;
 
 export default function Reader() {
   const { id, seg } = useLocalSearchParams<{ id: string; seg?: string }>();
-  const sutta = getSutta(id);
-  if (!sutta) return <Page back eyebrow="Reader" title="මෙම පාඨය නැත"><T f={F.pali} size={15}>This text is not in this build yet.</T></Page>;
-  return <ReaderView key={id} id={id} startSeg={seg} />;
+  usePacks(); // re-render when a pack finishes downloading
+  const node = getNode(id);
+  if (!node) return <Page back eyebrow="Reader" title="පාඨය හමු නොවීය"><T f={F.pali} size={15}>This text could not be found.</T></Page>;
+  if (!available(node)) return <NotDownloaded node={node} />;
+  return <ReaderView key={id} node={node} startSeg={seg} />;
 }
 
-function ReaderView({ id, startSeg }: { id: string; startSeg?: string }) {
+function NotDownloaded({ node }: { node: Node }) {
+  const c = useColors(), { progress, error } = usePacks(), pack = PACKS.find(p => p.id === node.pack);
+  const p = progress[node.pack];
+  return (
+    <Page back eyebrow={cite(node.id)} title={node.title_si}>
+      <T f={F.paliI} size={17} lh={1.3} color={c.mut}>{romanTitle(node)}</T>
+      <View style={{ padding: 18, borderRadius: 18, backgroundColor: c.soft, gap: 10 }}>
+        <T f={F.si6} size={16} lh={1.6}>{pack?.si} බාගත කර නැත</T>
+        <T f={F.pali} size={14.5} lh={1.5} color={c.mut}>This text is in the {pack?.name} collection. Download it once and it reads offline from then on.</T>
+        {p != null
+          ? <T f={F.paliB} size={15} color={c.acct}>Downloading… {Math.round(p * 100)}%</T>
+          : <Btn label="Download · බාගත කරන්න" icon="download" onPress={() => install(node.pack).catch(() => {})} />}
+        {error ? <T f={F.pali} size={13.5} lh={1.4} color={c.acct}>{error}</T> : null}
+      </View>
+    </Page>
+  );
+}
+
+function ReaderView({ node, startSeg }: { node: Node; startSeg?: string }) {
+  const id = node.id;
   const version = useUserData();
   const s = useSettings(), c = useColors(), insets = useSafeAreaInsets();
-  const sutta = getSutta(id)!, segs = sutta.segs, { prev, next } = neighbours(id);
+  const { segs } = useMemo(() => getText(id)!, [id]);
+  const { prev, next } = useMemo(() => neighbours(id), [id]);
+  const trail = useMemo(() => chain(id).slice(1, -1).map(romanTitle).join(' · '), [id]);
+  // paragraph numbers count content only, not headings
+  const nums = useMemo(() => { let n = 0; return segs.map(x => (isHeading(x) ? 0 : ++n)); }, [segs]);
+  const total = nums.reduce((a, b) => Math.max(a, b), 0);
+  const noSinhala = segs.every(x => !x.sinh);
 
   const [sheet, setSheet] = useState<SheetKind>(null);
   const [sel, setSel] = useState(0);
-  const [word, setWord] = useState({ v: 0, l: 0, w: 0 });
+  const [word, setWord] = useState({ seg: -1, w: -1, text: '' });
+  const [note, setNote] = useState({ lang: 'pali' as 'pali' | 'sinh', marker: '', texts: [] as string[] });
   const [cur, setCur] = useState(0);
   const [focus, setFocus] = useState<number | null>(null);
   const [noteDraft, setNoteDraft] = useState('');
-  const list = useRef<FlatList<Verse>>(null);
+  const list = useRef<FlatList<Seg>>(null);
   const prog = useRef(new Animated.Value(0)).current, progN = useRef(0);
 
-  // user data for this sutta
   const bms = new Set(listBookmarks().filter(b => b.sutta_id === id).map(b => b.seg_id));
   const hls = new Set(listHighlights().filter(h => h.sutta_id === id).map(h => h.seg_id));
   const notes = new Map(listNotes().filter(n => n.sutta_id === id).map(n => [n.seg_id, n.body]));
 
-  // jump to ?seg= once, then flash it
   useEffect(() => {
     const i = segs.findIndex(x => x.id === startSeg);
     if (i < 0) return;
@@ -50,76 +81,72 @@ function ReaderView({ id, startSeg }: { id: string; startSeg?: string }) {
     return () => { clearTimeout(t); clearTimeout(u); };
   }, []);
 
-  const onViewable = useRef(({ viewableItems }: { viewableItems: ViewToken<Verse>[] }) => {
-    const first = viewableItems.find(v => v.index != null);
+  const onViewable = useRef(({ viewableItems }: { viewableItems: ViewToken<Seg>[] }) => {
+    const first = viewableItems.find(v => v.index != null && !isHeading(v.item));
     if (first?.index == null) return;
     setCur(first.index);
     recordHistory(id, first.item.id, progN.current);
   }).current;
 
-  // sizes (design renderVals)
+  // sizes
   const side = s.mode === 'side', k = side ? 0.84 : 1, ab = s.siFont === 'abhaya' ? 1.14 : 1;
   const [pf, sf] = FONT_STEPS[s.fontStep], LH = LINE_STEPS[s.lhStep], SLH = SI_LINE_STEPS[s.lhStep];
   const siFam = s.siFont === 'abhaya' ? F.abhaya : F.si;
-  const paliFam = s.script === 'sinhala' ? siFam : s.paFont === 'noto' ? F.noto : F.pali;
+  const roman = s.script === 'roman';
+  const paliFam = roman ? (s.paFont === 'noto' ? F.noto : F.pali) : siFam;
   const showSi = s.lang !== 'en', showEn = s.lang !== 'si';
-  const sin = s.script === 'sinhala';
-  const paliSize = pf * k, siSize = (s.mode === 'trans' ? sf * 1.08 : sf) * k * ab, enSize = (sf - 1) * k;
+  const paliSize = pf * k, siSize = (s.mode === 'trans' ? sf * 1.08 : sf) * k * ab;
+  const show = (x: string) => (roman ? toRoman(x) : withZwj(x));
+  const lines = (x: Seg) => show(plain(x.pali)).split('\n');
+  const snippet = (x: Seg) => toRoman(plain(x.pali)).split('\n')[0].slice(0, 140);
 
   // keep the last sheet's content while the sheet animates closed
   const lastSheet = useRef<SheetKind>(null);
   if (sheet) lastSheet.current = sheet;
   const kind = sheet ?? lastSheet.current;
   const selV = segs[sel];
-  const snippet = (v: Verse) => v.roman[0];
-  const openSheet = (kind: SheetKind, i: number) => { setSel(i); setSheet(kind); };
-  const goSutta = (n?: Node) => n && (hasText(n.id) ? router.replace({ pathname: '/reader/[id]', params: { id: n.id } }) : toast('Not in this build yet'));
+  const openSheet = (k: SheetKind, i: number) => { setSel(i); setSheet(k); };
+  const openFootnote = (i: number, lang: 'pali' | 'sinh', marker: string) => {
+    setNote({ lang, marker, texts: footnotes(node, segs[i].id, lang, marker) });
+    openSheet('footnote', i);
+  };
+  const goSutta = (n?: Node) => n && router.replace({ pathname: '/reader/[id]', params: { id: n.id } });
 
-  const renderVerse = ({ item: v, index: i }: { item: Verse; index: number }) => {
-    const bg = focus === i ? c.hl : hls.has(v.id) ? c.hlSoft : 'transparent';
-    const pali = (
-      <View style={{ flex: side ? 1 : undefined, gap: 2 }}>
-        {v.roman.map((line, l) => {
-          const rw = line.split(' '), sw = v.pali[l].split(' ');
-          return (
-            <Text key={l} maxFontSizeMultiplier={1.6} style={{ fontFamily: paliFam, fontSize: paliSize, lineHeight: Math.round(paliSize * LH), color: c.ink }}>
-              {rw.map((w, wi) => {
-                const act = sheet === 'word' && word.v === i && word.l === l && word.w === wi;
-                return (
-                  <Text key={wi} onPress={() => { setWord({ v: i, l, w: wi }); openSheet('word', i); if (s.tip) setSettings({ tip: false }); }}
-                    style={act ? { backgroundColor: c.acc, color: c.onacc } : null}>
-                    {(sin ? sw[wi] ?? w : w) + (wi < rw.length - 1 ? ' ' : '')}
-                  </Text>
-                );
-              })}
-            </Text>
-          );
-        })}
+  const renderSeg = ({ item: x, index: i }: { item: Seg; index: number }) => {
+    const head = isHeading(x);
+    const trOnly = s.mode === 'trans' && !!x.sinh;
+    const paliBlock = !trOnly && (
+      <View style={{ flex: side ? 1 : undefined, paddingLeft: x.kind === 'gatha' ? 12 : 0 }}>
+        <Marked text={x.pali} script={s.script} noteColor={c.acct} onNote={m => openFootnote(i, 'pali', m)}
+          onWord={head ? undefined : (w, wi) => { setWord({ seg: i, w: wi, text: w }); openSheet('word', i); if (s.tip) setSettings({ tip: false }); }}
+          activeWord={sheet === 'word' && word.seg === i ? word.w : undefined} activeStyle={{ backgroundColor: c.acc, color: c.onacc }}
+          style={{ fontFamily: head ? (roman ? F.paliB : F.si7) : paliFam, fontSize: head ? paliSize * 1.08 : paliSize,
+            lineHeight: Math.round(paliSize * LH), color: c.ink, textAlign: head ? 'center' : 'left' }} />
       </View>
     );
-    const trans = (
-      <View style={{ flex: side ? 1 : undefined, gap: 8 }}>
-        {showSi ? <Text maxFontSizeMultiplier={1.6} style={{ fontFamily: siFam, fontSize: siSize, lineHeight: Math.round(siSize * SLH), color: s.mode === 'trans' ? c.ink : c.ink + 'D1' }}>{v.si}</Text> : null}
-        {showEn && !(side && showSi) ? <Text maxFontSizeMultiplier={1.6} style={{ fontFamily: F.paliI, fontSize: enSize, lineHeight: Math.round(enSize * LH), color: c.mut }}>{v.en}</Text> : null}
+    const transBlock = s.mode !== 'pali' && showSi && x.sinh && (
+      <View style={{ flex: side ? 1 : undefined, paddingLeft: x.kind === 'gatha' && !side ? 12 : 0 }}>
+        <Marked text={x.sinh} noteColor={c.acct} onNote={m => openFootnote(i, 'sinh', m)}
+          style={{ fontFamily: head ? F.si6 : siFam, fontSize: siSize, lineHeight: Math.round(siSize * SLH),
+            color: s.mode === 'trans' || head ? c.ink : c.ink + 'D1', textAlign: head ? 'center' : 'left' }} />
       </View>
     );
+    if (head) return <View style={{ paddingHorizontal: 24, paddingVertical: 10, gap: 4 }}>{paliBlock}{transBlock}</View>;
+    const bg = focus === i ? c.hl : hls.has(x.id) ? c.hlSoft : 'transparent';
     return (
       <View style={{ paddingTop: 14, paddingBottom: 16, paddingLeft: 50, paddingRight: 12, marginHorizontal: 12, borderRadius: 16, backgroundColor: bg }}>
-        <Pressable onPress={() => openSheet('verse', i)} accessibilityRole="button" accessibilityLabel={`Verse ${v.n}, actions`}
+        <Pressable onPress={() => openSheet('verse', i)} accessibilityRole="button" accessibilityLabel={`Paragraph ${nums[i]}, actions`}
           style={{ position: 'absolute', left: 6, top: 12, width: 36, height: 36, borderRadius: 18, borderWidth: 1,
             borderColor: sheet && sheet !== 'word' && sel === i ? c.acc : c.line, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center' }}>
-          <T f={F.pali} size={14} lh={1.1} color={c.mut}>{v.n}</T>
+          <T f={F.pali} size={nums[i] > 99 ? 11.5 : 14} lh={1.1} color={c.mut}>{nums[i]}</T>
         </Pressable>
-        {bms.has(v.id) ? <View style={{ position: 'absolute', right: 8, top: -3 }}><Icon name="bookmark" color={c.acct} fill /></View> : null}
-        <View style={{ flexDirection: side ? 'row' : 'column', gap: side ? 14 : 10 }}>
-          {s.mode !== 'trans' ? pali : null}
-          {s.mode !== 'pali' ? trans : null}
-        </View>
-        {notes.has(v.id) ? (
-          <Pressable onPress={() => { setNoteDraft(notes.get(v.id)!); openSheet('note', i); }} accessibilityRole="button"
+        {bms.has(x.id) ? <View style={{ position: 'absolute', right: 8, top: -3 }}><Icon name="bookmark" color={c.acct} fill /></View> : null}
+        <View style={{ flexDirection: side ? 'row' : 'column', gap: side ? 14 : 10 }}>{paliBlock}{transBlock}</View>
+        {notes.has(x.id) ? (
+          <Pressable onPress={() => { setNoteDraft(notes.get(x.id)!); openSheet('note', i); }} accessibilityRole="button"
             style={{ marginTop: 12, flexDirection: 'row', gap: 10, padding: 10, paddingHorizontal: 14, borderRadius: 12, backgroundColor: c.card, borderWidth: 1, borderStyle: 'dashed', borderColor: c.line }}>
             <Icon name="edit_note" size={19} color={c.acct} />
-            <T size={14.5} lh={1.65} style={{ flex: 1 }}>{notes.get(v.id)}</T>
+            <T size={14.5} lh={1.65} style={{ flex: 1 }}>{notes.get(x.id)}</T>
           </Pressable>
         ) : null}
       </View>
@@ -127,20 +154,18 @@ function ReaderView({ id, startSeg }: { id: string; startSeg?: string }) {
   };
 
   const header = (
-    <View style={{ paddingHorizontal: 24, paddingTop: 22, gap: 6 }}>
-      <T f={F.pali} size={13} lh={1.5} color={c.mut}>{sutta.trail}</T>
-      <T f={sin ? F.si6 : F.pali} size={28} lh={1.3}>{sin ? sutta.titlePali : sutta.titleRoman}</T>
-      <T f={F.si5} size={17} lh={1.6} color={c.mut}>{sutta.titleSi}</T>
-      {IS_SAMPLE ? <T f={F.pali} size={12.5} lh={1.4} color={c.acct}>Sample text for development · not the Buddha Jayanti edition</T> : null}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 18, marginBottom: 12 }}>
-        <View style={{ flex: 1, height: 1, backgroundColor: c.line }} />
-        <T f={sin ? F.si : F.paliI} size={14.5} lh={1.5} color={c.mut} style={{ textAlign: 'center', maxWidth: 250 }}>{sutta.namo[sin ? 1 : 0]}</T>
-        <View style={{ flex: 1, height: 1, backgroundColor: c.line }} />
-      </View>
+    <View style={{ paddingHorizontal: 24, paddingTop: 22, paddingBottom: 6, gap: 6 }}>
+      <T f={F.pali} size={13} lh={1.5} color={c.mut}>{trail}</T>
+      <T f={roman ? F.pali : F.si6} size={28} lh={1.3}>{roman ? romanTitle(node) : withZwj(node.title_pali)}</T>
+      <T f={F.si5} size={17} lh={1.6} color={c.mut}>{node.title_si}</T>
+      {showSi && noSinhala && s.mode !== 'pali'
+        ? <T f={F.pali} size={13} lh={1.4} color={c.acct}>No Sinhala translation for this text yet · සිංහල පරිවර්තනයක් නැත</T> : null}
+      {showEn && s.mode !== 'pali'
+        ? <T f={F.pali} size={13} lh={1.4} color={c.mut}>English translation arrives with the English pack.</T> : null}
       {s.tip ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4, paddingLeft: 14, paddingRight: 4, borderRadius: 14, backgroundColor: c.soft, marginBottom: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10, paddingVertical: 4, paddingLeft: 14, paddingRight: 4, borderRadius: 14, backgroundColor: c.soft }}>
           <Icon name="touch_app" size={20} color={c.acct} />
-          <T f={F.pali} size={14} lh={1.45} style={{ flex: 1 }}>Tap a Pāḷi word for its meaning. Tap a verse number to bookmark, highlight, note or share.</T>
+          <T f={F.pali} size={14} lh={1.45} style={{ flex: 1 }}>Tap a Pāḷi word to look it up. Tap a paragraph number to bookmark, highlight, note or share.</T>
           <IconBtn name="close" label="Dismiss tip" size={20} color={c.mut} onPress={() => setSettings({ tip: false })} />
         </View>
       ) : null}
@@ -149,17 +174,14 @@ function ReaderView({ id, startSeg }: { id: string; startSeg?: string }) {
 
   const footer = (
     <View style={{ paddingHorizontal: 24, paddingBottom: 36 }}>
-      <View style={{ alignItems: 'center', gap: 10, paddingTop: 26, paddingBottom: 8 }}>
-        <Wheel size={22} />
-        <T f={sin ? F.si : F.paliI} size={16} lh={1.4} color={c.mut}>{sutta.end[sin ? 1 : 0]}</T>
-      </View>
+      <View style={{ alignItems: 'center', paddingTop: 26, paddingBottom: 8 }}><Wheel size={22} /></View>
       {next ? (
         <Pressable onPress={() => goSutta(next)} accessibilityRole="button"
           style={{ marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 14, padding: 18, borderRadius: 20, backgroundColor: c.card, borderWidth: 1, borderColor: c.line }}>
           <View style={{ flex: 1 }}>
-            <Eyebrow en="Next" si={`ඊළඟ · ${next.ref ?? ''}`} />
-            <T f={F.si6} size={18} lh={1.55}>{next.si}</T>
-            <T f={F.paliI} size={15} lh={1.3} color={c.mut}>{next.pali}</T>
+            <Eyebrow en="Next" si={`ඊළඟ · ${cite(next.id)}`} />
+            <T f={F.si6} size={18} lh={1.55}>{next.title_si}</T>
+            <T f={F.paliI} size={15} lh={1.3} color={c.mut}>{romanTitle(next)}</T>
           </View>
           <Icon name="arrow_forward" size={26} color={c.acct} />
         </Pressable>
@@ -168,38 +190,37 @@ function ReaderView({ id, startSeg }: { id: string; startSeg?: string }) {
   );
 
   const suttaBm = bms.has(null);
-  const wv = segs[word.v], rawW = (wv.roman[word.l] ?? '').split(' ')[word.w] ?? '', ent = lookup(rawW);
-  const sinW = (wv.pali[word.l] ?? '').split(' ')[word.w] ?? '';
+  const w = plain(word.text).replace(PUNCT, '');
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg, paddingTop: insets.top }}>
-      {/* top bar */}
       <View style={{ height: 52, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8 }}>
         <IconBtn name="arrow_back" label="Back" onPress={() => router.back()} />
         <View style={{ flex: 1, alignItems: 'center' }}>
-          <T f={F.si6} size={15} lh={1.3} numberOfLines={1}>{sutta.titleSi}</T>
-          <T f={F.pali} size={12.5} lh={1.1} color={c.mut}>{sutta.ref}</T>
+          <T f={F.si6} size={15} lh={1.3} numberOfLines={1}>{node.title_si}</T>
+          <T f={F.pali} size={12.5} lh={1.1} color={c.mut}>{cite(id)}</T>
         </View>
         <Pressable onPress={() => setSheet('display')} accessibilityRole="button" accessibilityLabel="Display settings"
           style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
           <T f={F.pali} size={19} lh={1.1} allowFontScaling={false}>Aa</T>
         </Pressable>
-        <IconBtn name="bookmark" label={suttaBm ? 'Remove sutta bookmark' : 'Bookmark sutta'} size={23} fill={suttaBm} color={suttaBm ? c.acct : c.ink}
-          onPress={() => toast(toggleBookmark(id, null, sutta.titleRoman) ? 'Sutta bookmarked · සලකුණු කළා' : 'Bookmark removed')} />
+        <IconBtn name="bookmark" label={suttaBm ? 'Remove bookmark' : 'Bookmark this text'} size={23} fill={suttaBm} color={suttaBm ? c.acct : c.ink}
+          onPress={() => toast(toggleBookmark(id, null, romanTitle(node)) ? 'Bookmarked · සලකුණු කළා' : 'Bookmark removed')} />
       </View>
       <View style={{ height: 3, backgroundColor: c.line }}>
         <Animated.View style={{ height: 3, backgroundColor: c.acc, width: prog.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'], extrapolate: 'clamp' }) }} />
       </View>
       <View style={{ paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.line }}>
-        <Seg value={s.mode} onChange={mode => setSettings({ mode })} height={40} options={[
-          { value: 'pali', label: 'Pāḷi' }, { value: 'trans', label: s.lang === 'en' ? 'English' : 'සිංහල' },
+        <Segmented value={s.mode} onChange={mode => setSettings({ mode })} height={40} options={[
+          { value: 'pali', label: 'Pāḷi' }, { value: 'trans', label: 'සිංහල' },
           { value: 'line', label: 'Parallel' }, { value: 'side', label: 'Side by side' }]} />
       </View>
 
       <FlatList
-        ref={list} data={segs} keyExtractor={v => v.id} renderItem={renderVerse}
+        ref={list} data={segs} keyExtractor={x => x.id} renderItem={renderSeg}
         extraData={[version, s, sheet, sel, word, focus]}
         ListHeaderComponent={header} ListFooterComponent={footer}
+        initialNumToRender={12} windowSize={9}
         onViewableItemsChanged={onViewable} viewabilityConfig={{ itemVisiblePercentThreshold: 40 }}
         scrollEventThrottle={32}
         onScroll={e => {
@@ -214,10 +235,9 @@ function ReaderView({ id, startSeg }: { id: string; startSeg?: string }) {
         }}
       />
 
-      {/* bottom bar */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingBottom: 8 + insets.bottom, paddingTop: 8, borderTopWidth: 1, borderTopColor: c.line }}>
         <NavEnd n={prev} dir="prev" onPress={() => goSutta(prev)} />
-        <T f={F.pali} size={14} lh={1.2} color={c.mut} style={{ paddingHorizontal: 8 }}>{cur + 1} / {segs.length}</T>
+        <T f={F.pali} size={14} lh={1.2} color={c.mut} style={{ paddingHorizontal: 8 }}>{nums[cur] || 1} / {total}</T>
         <NavEnd n={next} dir="next" onPress={() => goSutta(next)} />
       </View>
 
@@ -226,33 +246,19 @@ function ReaderView({ id, startSeg }: { id: string; startSeg?: string }) {
           <View style={{ gap: 14 }}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
               <View style={{ flex: 1, gap: 2 }}>
-                <T f={F.pali} size={31} lh={1.25}>{rawW.replace(PUNCT, '')}</T>
-                <T size={18} lh={1.6} color={c.mut}>{sinW}</T>
+                <T f={F.pali} size={31} lh={1.25}>{toRoman(w)}</T>
+                <T size={18} lh={1.6} color={c.mut}>{withZwj(w)}</T>
               </View>
               <IconBtn name="bookmark_add" label="Save word" size={22} color={c.acct}
-                onPress={() => { saveWord(rawW.replace(PUNCT, '').toLowerCase()); toast('Saved to word list · වචනය සුරැකිණි'); }}
+                onPress={() => { saveWord(toRoman(w).toLowerCase()); toast('Saved to word list · වචනය සුරැකිණි'); }}
                 style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: c.soft }} />
             </View>
-            {ent ? <>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                {[ent.grammar, '√ / ' + ent.construction].map(g => (
-                  <View key={g} style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: 9, backgroundColor: c.soft }}><T f={F.pali} size={13.5} lh={1.2}>{g}</T></View>
-                ))}
-              </View>
-              <View style={{ height: 1, backgroundColor: c.line }} />
-              {/* Sinhala meaning (සිංහල අර්ථය) comes from the Buddhadatta/Sumaṅgala dictionary pack; the sample glossary has none */}
-              <View style={{ gap: 4 }}>
-                <Eyebrow en="English" />
-                <T f={F.paliI} size={18} lh={1.5}>{ent.en}</T>
-              </View>
-            </> : (
-              <View style={{ gap: 6, padding: 16, borderRadius: 16, borderWidth: 1, borderStyle: 'dashed', borderColor: c.line }}>
-                <T f={F.si6} size={16} lh={1.6}>කෙටි ශබ්දකෝෂයේ මෙම වචනය නැත</T>
-                <T f={F.pali} size={14.5} lh={1.5} color={c.mut}>This word isn’t in the dictionary yet. It may be a sandhi form — try tapping a neighbouring word.</T>
-              </View>
-            )}
+            <View style={{ gap: 6, padding: 16, borderRadius: 16, borderWidth: 1, borderStyle: 'dashed', borderColor: c.line }}>
+              <T f={F.si6} size={16} lh={1.6}>ශබ්දකෝෂය ළඟදීම</T>
+              <T f={F.pali} size={14.5} lh={1.5} color={c.mut}>Meanings arrive with the dictionary pack (Buddhadatta, Sumaṅgala and the Digital Pāḷi Dictionary). Saved words will be ready for it.</T>
+            </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingTop: 4 }}>
-              <T f={F.pali} size={13} lh={1.4} color={c.mut} style={{ flex: 1 }}>{sutta.ref} · verse {word.v + 1} · works offline</T>
+              <T f={F.pali} size={13} lh={1.4} color={c.mut} style={{ flex: 1 }}>{cite(id)} · ¶{nums[word.seg] || '–'}</T>
               <Btn label="Done" onPress={() => setSheet(null)} style={{ height: 46 }} />
             </View>
           </View>
@@ -273,17 +279,17 @@ function ReaderView({ id, startSeg }: { id: string; startSeg?: string }) {
             </View>
             <View style={{ gap: 8 }}>
               <Eyebrow en="Line spacing" si="පේළි පරතරය" />
-              <Seg value={s.lhStep} onChange={lhStep => setSettings({ lhStep })} height={54}
+              <Segmented value={s.lhStep} onChange={lhStep => setSettings({ lhStep })} height={54}
                 options={[{ value: 0, label: 'ඝන', sub: 'Compact' }, { value: 1, label: 'සාමාන්‍ය', sub: 'Comfortable' }, { value: 2, label: 'ඉඩ සහිත', sub: 'Airy' }]} />
             </View>
             <View style={{ gap: 8 }}>
               <Eyebrow en="Theme" si="පසුබිම" />
-              <Seg value={s.theme} onChange={theme => setSettings({ theme })} height={48}
+              <Segmented value={s.theme} onChange={theme => setSettings({ theme })} height={48}
                 options={[{ value: 'paper', label: 'කඩදාසි · Paper' }, { value: 'night', label: 'රාත්‍රී · Night' }]} />
             </View>
             <View style={{ gap: 8 }}>
               <Eyebrow en="Pāḷi script" si="පාළි අක්ෂර" />
-              <Seg value={s.script} onChange={script => setSettings({ script })} height={46}
+              <Segmented value={s.script} onChange={script => setSettings({ script })} height={46}
                 options={[{ value: 'roman', label: 'Roman · ā ṃ ñ' }, { value: 'sinhala', label: 'සිංහල අකුරු' }]} />
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
@@ -293,12 +299,12 @@ function ReaderView({ id, startSeg }: { id: string; startSeg?: string }) {
           </View>
         )}
 
-        {kind === 'verse' && (
+        {kind === 'verse' && selV && (
           <View style={{ gap: 16 }}>
-            <Eyebrow en={`Verse ${selV.n}`} si={`ගාථා ${selV.n} · ${sutta.ref}`} />
+            <Eyebrow en={`Paragraph ${nums[sel]}`} si={`${cite(id)} · ¶${nums[sel]}`} />
             <View style={{ gap: 6 }}>
-              <T f={F.paliI} size={18} lh={1.55}>{selV.roman[0]}</T>
-              <T size={15} lh={1.7} color={c.mut} numberOfLines={2}>{selV.si}</T>
+              <T f={roman ? F.paliI : F.si} size={18} lh={1.55} numberOfLines={3}>{lines(selV).join(' ')}</T>
+              {selV.sinh ? <T size={15} lh={1.7} color={c.mut} numberOfLines={2}>{plain(selV.sinh)}</T> : null}
             </View>
             <View style={{ flexDirection: 'row', gap: 6 }}>
               <Action icon="bookmark" si="සලකුණ" en={bms.has(selV.id) ? 'Saved' : 'Bookmark'} on={bms.has(selV.id)}
@@ -310,8 +316,8 @@ function ReaderView({ id, startSeg }: { id: string; startSeg?: string }) {
             </View>
             <Pressable accessibilityRole="button" style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52, paddingHorizontal: 16, borderRadius: 16, borderWidth: 1, borderColor: c.line }}
               onPress={async () => {
-                await Clipboard.setStringAsync([selV.roman.join('\n'), selV.si, `— ${sutta.titleRoman} · ${sutta.ref} · v${selV.n}`].join('\n\n'));
-                setSheet(null); toast('Verse copied · පිටපත් විය');
+                await Clipboard.setStringAsync([lines(selV).join('\n'), plain(selV.sinh ?? ''), `— ${romanTitle(node)} · ${cite(id)} · ¶${nums[sel]}`].filter(Boolean).join('\n\n'));
+                setSheet(null); toast('Copied · පිටපත් විය');
               }}>
               <Icon name="content_copy" size={20} color={c.mut} />
               <T f={F.si5} size={15} lh={1.65}>පිටපත් කරන්න · Copy text</T>
@@ -319,10 +325,10 @@ function ReaderView({ id, startSeg }: { id: string; startSeg?: string }) {
           </View>
         )}
 
-        {kind === 'note' && (
+        {kind === 'note' && selV && (
           <View style={{ gap: 14 }}>
             <View>
-              <Eyebrow en={`Note · Verse ${selV.n}`} />
+              <Eyebrow en={`Note · ¶${nums[sel]}`} />
               <T f={F.si7} size={20} lh={1.65}>පුද්ගලික සටහන</T>
             </View>
             <TextInput value={noteDraft} onChangeText={setNoteDraft} multiline numberOfLines={5} placeholder="ඔබේ සටහන මෙහි ලියන්න…"
@@ -340,8 +346,19 @@ function ReaderView({ id, startSeg }: { id: string; startSeg?: string }) {
           </View>
         )}
 
-        {kind === 'share' && (
-          <ShareBody item={{ ref: `${sutta.ref} · verse ${selV.n}`, title: sutta.titleRoman, lines: selV.roman, si: selV.si }} onDone={() => setSheet(null)} />
+        {kind === 'share' && selV && (
+          <ShareBody item={{ ref: `${cite(id)} · ¶${nums[sel]}`, title: romanTitle(node), lines: lines(selV), si: plain(selV.sinh ?? '') }} onDone={() => setSheet(null)} />
+        )}
+
+        {kind === 'footnote' && (
+          <View style={{ gap: 12 }}>
+            <Eyebrow en={`Footnote ${note.marker}`} si={note.lang === 'pali' ? 'පාළි පාද සටහන' : 'පරිවර්තන සටහන'} />
+            {note.texts.length ? note.texts.map((t, i) => (
+              <Marked key={i} text={t} script={note.lang === 'pali' ? s.script : undefined} noteColor={c.acct}
+                style={{ fontFamily: note.lang === 'pali' && roman ? F.pali : F.si, fontSize: 16, lineHeight: 27, color: c.ink }} />
+            )) : <T f={F.pali} size={15} color={c.mut}>No footnote text on this page.</T>}
+            <T f={F.pali} size={12.5} lh={1.4} color={c.mut}>As printed in the Buddha Jayanti edition.</T>
+          </View>
         )}
       </Sheet>
     </View>
@@ -352,12 +369,12 @@ function NavEnd({ n, dir, onPress }: { n?: Node; dir: 'prev' | 'next'; onPress: 
   const c = useColors(), end = dir === 'next';
   if (!n) return <View style={{ flex: 1 }} />;
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${end ? 'Next' : 'Previous'}: ${n.pali}`}
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${end ? 'Next' : 'Previous'}: ${romanTitle(n)}`}
       style={{ flex: 1, minWidth: 0, height: 52, flexDirection: end ? 'row-reverse' : 'row', alignItems: 'center', gap: 4 }}>
       <Icon name={end ? 'chevron_right' : 'chevron_left'} size={24} color={c.mut} />
       <View style={{ flexShrink: 1, alignItems: end ? 'flex-end' : 'flex-start' }}>
-        <T f={F.pali} size={12} lh={1.2} color={c.mut}>{n.ref}</T>
-        <T f={F.si6} size={14.5} lh={1.65} numberOfLines={1}>{n.si}</T>
+        <T f={F.pali} size={12} lh={1.2} color={c.mut}>{cite(n.id)}</T>
+        <T f={F.si6} size={14.5} lh={1.65} numberOfLines={1}>{n.title_si}</T>
       </View>
     </Pressable>
   );

@@ -30,7 +30,7 @@ jobs:
       - if: steps.pin.outputs.old != steps.pin.outputs.new
         working-directory: data-pipeline
         run: |
-          node src/build.ts && node src/verify.ts && node src/package.ts
+          node src/build.ts && node src/verify.ts && node src/golden.ts && node src/package.ts
           branch="data/tipitaka-lk-${{ steps.pin.outputs.new }}"
           git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
           git checkout -b "$branch" && git commit -am "Sync tipitaka.lk to ${{ steps.pin.outputs.new }}" && git push -u origin "$branch"
@@ -48,7 +48,7 @@ jobs:
       - run: npm ci -w data-pipeline
       - working-directory: data-pipeline
         run: |
-          node src/fetch.ts && node src/build.ts && node src/verify.ts && node src/package.ts
+          node src/fetch.ts && node src/build.ts && node src/verify.ts && node src/golden.ts && node src/package.ts
           v=$(node -p "require('./out/release/manifest.json').version")
           tag="data-$v-${GITHUB_SHA::7}"
           { echo "Text packs $v, built from tipitaka.lk @ $(node -p "require('./sources.lock.json').tipitakaLk.commit")."; echo;

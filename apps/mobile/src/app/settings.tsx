@@ -1,12 +1,19 @@
-import { Pressable, View } from 'react-native';
+import { useEffect } from 'react';
+import { Alert, Pressable, View } from 'react-native';
 import { router } from 'expo-router';
-import { PACKS } from '../data/content';
+import { install, installedBytes, installedVersion, isInstalled, loadManifest, PACKS, remove, usePacks } from '../data/packs';
 import { setSettings, useSettings } from '../db/user';
 import { F, LANGS, SIZE_NAMES } from '../theme';
 import { Card, Eyebrow, Icon, IconName, Page, Ring, Seg, T, Toggle, useColors } from '../ui';
 
+const confirmRemove = (id: string, name: string) =>
+  Alert.alert(`Remove ${name}?`, 'Your bookmarks and notes stay. You can download it again any time.', [
+    { text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => remove(id) },
+  ]);
+
 export default function Settings() {
-  const s = useSettings(), c = useColors();
+  const s = useSettings(), c = useColors(), { manifest, progress, error } = usePacks();
+  useEffect(() => { loadManifest().catch(() => {}); }, []);   // update check: a plain GET, no identifiers
   const row = { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: c.line, gap: 10 };
 
   return (
@@ -68,22 +75,34 @@ export default function Settings() {
       <View style={{ gap: 10 }}>
         <Eyebrow en="Offline downloads" si="බාගත කිරීම්" />
         <Card style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
-          {/* ponytail: packs are not published yet. Rows list the collections; downloads come with the pack manifest. */}
           <T f={F.pali} size={14} lh={1.45} color={c.mut} style={{ paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: c.line }}>
-            Collections become downloadable with the first data release. Sizes are estimates.
+            {`${(installedBytes() / 1e6).toFixed(0)} MB on this phone. Khuddakapāṭha, Dhammapada and Sutta Nipāta are always included.`}
+            {!manifest ? ' Connect to the internet to download more.' : ''}
           </T>
-          {PACKS.map((p, i) => (
-            <View key={p.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 62, borderBottomWidth: i < PACKS.length - 1 ? 1 : 0, borderBottomColor: c.line }}>
-              <View style={{ flex: 1 }}>
-                <T f={F.si5} size={15.5} lh={1.65}>{p.si}</T>
-                <T f={F.pali} size={13} lh={1.3} color={c.mut}>{p.name} · ~{p.mb} MB</T>
+          {PACKS.map((p, i) => {
+            const m = manifest?.packs.find(x => x.id === p.id), have = isInstalled(p.id), pct = progress[p.id];
+            const update = have && m && installedVersion(p.id) !== m.version;
+            const [icon, label, act]: [IconName, string, (() => void) | undefined] =
+              pct != null ? ['downloading', `${Math.round(pct * 100)}%`, undefined]
+              : update ? ['download', 'Update', () => install(p.id).catch(() => {})]
+              : have ? ['download_done', 'Saved', () => confirmRemove(p.id, p.name)]
+              : ['download', 'Download', m ? () => install(p.id).catch(() => {}) : undefined];
+            return (
+              <View key={p.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 62, borderBottomWidth: i < PACKS.length - 1 ? 1 : 0, borderBottomColor: c.line }}>
+                <View style={{ flex: 1 }}>
+                  <T f={F.si5} size={15.5} lh={1.65}>{p.si}</T>
+                  <T f={F.pali} size={13} lh={1.3} color={c.mut}>{p.name}{m ? ` · ${(m.bytes / 1e6).toFixed(1)} MB` : ''}</T>
+                </View>
+                <Pressable onPress={act} disabled={!act} accessibilityRole="button" accessibilityLabel={`${label} ${p.name}`}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 40, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1,
+                    borderColor: have && !update ? c.line : c.acc, opacity: act || pct != null ? 1 : 0.5 }}>
+                  <Icon name={icon} size={18} color={have && !update ? c.mut : c.acct} />
+                  <T f={F.paliB} size={13} lh={1.2} color={have && !update ? c.mut : c.acct}>{label}</T>
+                </Pressable>
               </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 40, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: c.line }}>
-                <Icon name="download" size={18} color={c.mut} />
-                <T f={F.paliB} size={13} lh={1.2} color={c.mut}>Soon</T>
-              </View>
-            </View>
-          ))}
+            );
+          })}
+          {error ? <T f={F.pali} size={13.5} lh={1.4} color={c.acct} style={{ paddingVertical: 10 }}>{error}</T> : null}
         </Card>
       </View>
 

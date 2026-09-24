@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -15,6 +15,7 @@ import { NotoSerifSinhala_700Bold } from '@expo-google-fonts/noto-serif-sinhala/
 import { AbhayaLibre_500Medium } from '@expo-google-fonts/abhaya-libre/500Medium';
 import { NotoSerif_400Regular } from '@expo-google-fonts/noto-serif/400Regular';
 import { NotoSerif_400Regular_Italic } from '@expo-google-fonts/noto-serif/400Regular_Italic';
+import { initContent } from '../data/content';
 import { useSettings } from '../db/user';
 import { ToastHost, useColors } from '../ui';
 
@@ -29,8 +30,11 @@ export default function Root() {
     Sym1: require('../../assets/fonts/MaterialSymbolsRounded-Fill1.ttf'),
   });
   const s = useSettings(), c = useColors();
-  useEffect(() => { if (loaded || error) SplashScreen.hideAsync(); }, [loaded, error]);
-  if (!loaded && !error) return null;
+  const [dbReady, setDbReady] = useState(false);
+  useEffect(() => { initContent().then(() => setDbReady(true)); }, []);
+  const ready = (loaded || !!error) && dbReady;
+  useEffect(() => { if (ready) SplashScreen.hideAsync(); }, [ready]);
+  if (!ready) return null;
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>

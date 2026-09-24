@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { describe } from '../../data/content';
+
+const FIRST_READ = 'kn-snp-1-8';
 import { History, listBookmarks, listHighlights, listHistory, listNotes, useUserData } from '../../db/user';
 import { F } from '../../theme';
 import { ago, Btn, Card, Icon, IconName, openReader, Page, Seg, T, useColors } from '../../ui';
@@ -29,7 +31,7 @@ export default function Library() {
           </View>
           <T f={F.si6} size={19} lh={1.6} style={{ marginTop: 6 }}>{si}</T>
           <T f={F.pali} size={15} lh={1.55} color={c.mut} style={{ textAlign: 'center' }}>{en}</T>
-          <Btn outline label="Open today’s reading" style={{ marginTop: 10, height: 50 }} onPress={() => openReader('u7')} />
+          <Btn outline label="Open today’s reading" style={{ marginTop: 10, height: 50 }} onPress={() => openReader(FIRST_READ)} />
         </View>
       );
     }
@@ -55,8 +57,8 @@ export default function Library() {
       const d = describe(h.sutta_id, h.seg_id);
       return (
         <Card key={h.id} onPress={() => openReader(h.sutta_id, h.seg_id)} style={{ padding: 18, gap: 10 }}>
-          <T f={F.paliI} size={18} lh={1.7}><T f={F.paliI} size={18} lh={1.7} style={{ backgroundColor: c.hl }}>{d.seg?.roman.join(' ') ?? h.snippet}</T></T>
-          {d.seg ? <T size={15} lh={1.75}>{d.seg.si}</T> : null}
+          <T f={F.paliI} size={18} lh={1.7}><T f={F.paliI} size={18} lh={1.7} style={{ backgroundColor: c.hl }}>{h.snippet}</T></T>
+          <T size={15} lh={1.6}>{d.si}</T>
           <T f={F.pali} size={13} lh={1.2} color={c.mut}>{d.pali} · {d.ref}</T>
         </Card>
       );
@@ -70,7 +72,7 @@ export default function Library() {
             <T f={F.pali} size={12.5} lh={1.4} color={c.mut}>{ago(n.updated_at)}</T>
           </View>
           <T size={16} lh={1.75}>{n.body}</T>
-          <T f={F.paliI} size={14} lh={1.5} color={c.mut}>“{d.seg?.roman[0] ?? n.snippet}”</T>
+          <T f={F.paliI} size={14} lh={1.5} color={c.mut}>“{n.snippet}”</T>
         </Card>
       );
     });
@@ -93,7 +95,7 @@ export default function Library() {
                 <T f={F.si5} size={16} lh={1.65}>{d.si}</T>
                 <T f={F.paliI} size={14} lh={1.3} color={c.mut}>{d.pali}</T>
               </View>
-              <T f={F.pali} size={13} lh={1.2} color={c.mut}>{d.ref} · {Math.round(h.progress * 100)}%</T>
+              <T f={F.pali} size={13} lh={1.2} color={c.mut}>{Math.round(h.progress * 100)}%</T>
             </Pressable>
           );
         })}

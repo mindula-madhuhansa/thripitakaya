@@ -10,7 +10,8 @@
     "build": "node src/build.ts",
     "verify": "node src/verify.ts",
     "package": "node src/package.ts",
-    "all": "node src/fetch.ts && node src/build.ts && node src/verify.ts && node src/package.ts"
+    "all": "node src/fetch.ts && node src/build.ts && node src/verify.ts && node src/golden.ts && node src/package.ts",
+    "golden": "node src/golden.ts"
   },
   "dependencies": {
     "@thripitakaya/shared": "*"

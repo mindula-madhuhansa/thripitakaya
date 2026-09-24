@@ -59,3 +59,7 @@ export function toSinhala(r: string): string {
   }
   return out;
 }
+
+/** Display-time joiners for Sinhala-script Pāḷi, which upstream stores without ZWJ: rakāransaya (ප්‍ර) and
+ *  yansaya (ය්‍ය) get consonant + virama + ZWJ. Touching letters (bandi) are not joined yet. Display only. */
+export const withZwj = (s: string) => s.replace(/([\u0D9A-\u0DC6]\u0DCA)([\u0DBA\u0DBB])/g, '$1\u200D$2');

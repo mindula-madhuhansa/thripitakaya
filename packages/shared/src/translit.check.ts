@@ -22,4 +22,9 @@ assert.equal(toSinhala('saṁvaro'), 'සංවරො');                // ṁ a
 assert.equal(toSinhala(toRoman('{1} **ක**')), '{1} **ක**');  // markup and unknowns pass through
 assert.equal(toSinhala(toRoman('සති{a} $අ$')), 'සති{a} $අ$'); // footnote letters stay Latin
 
+import { withZwj } from './translit.ts';
+assert.equal(withZwj('බ්රහ්ම'), 'බ්\u200Dරහ්ම');                // rakāransaya
+assert.equal(withZwj('උපවදෙය්යුං'), 'උපවදෙය්\u200Dයුං');        // yansaya
+assert.equal(withZwj('සත්ථා'), 'සත්ථා');                         // other clusters untouched
+
 console.log('translit: ok');
