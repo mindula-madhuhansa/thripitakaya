@@ -1,0 +1,57 @@
+# Keeps the texts in sync with tipitaka.lk (a condition of its license), with a person approving every change.
+#   weekly / manual: move the pin to upstream HEAD; if it changed, rebuild + verify and open a PR
+#   merge of a pin change to main: rebuild + verify and publish the packs as a GitHub Release
+name: data
+on:
+  schedule: [{ cron: '0 3 * * 1' }]
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [data-pipeline/sources.lock.json, data-pipeline/src/**, packages/shared/src/**]
+permissions: { contents: write, pull-requests: write }
+concurrency: data
+jobs:
+  sync:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    env: { GH_TOKEN: '${{ github.token }}', GITHUB_TOKEN: '${{ github.token }}' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - run: npm ci -w data-pipeline
+      - id: pin
+        working-directory: data-pipeline
+        run: |
+          old=$(node -p "require('./sources.lock.json').tipitakaLk.commit")
+          node src/fetch.ts --update
+          new=$(node -p "require('./sources.lock.json').tipitakaLk.commit")
+          echo "old=$old" >> "$GITHUB_OUTPUT"; echo "new=$new" >> "$GITHUB_OUTPUT"
+      - if: steps.pin.outputs.old != steps.pin.outputs.new
+        working-directory: data-pipeline
+        run: |
+          node src/build.ts && node src/verify.ts && node src/package.ts
+          branch="data/tipitaka-lk-${{ steps.pin.outputs.new }}"
+          git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
+          git checkout -b "$branch" && git commit -am "Sync tipitaka.lk to ${{ steps.pin.outputs.new }}" && git push -u origin "$branch"
+          { echo "Upstream changes: https://github.com/pathnirvana/tipitaka.lk/compare/${{ steps.pin.outputs.old }}...${{ steps.pin.outputs.new }}";
+            echo; echo "Review the upstream diff before merging. Merging publishes new packs."; echo; cat out/verify-report.md; echo; cat out/size-report.md; } > body.md
+          gh pr create --title "Sync tipitaka.lk to ${{ steps.pin.outputs.new }}" --body-file body.md
+  release:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env: { GH_TOKEN: '${{ github.token }}', GITHUB_TOKEN: '${{ github.token }}' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - run: npm ci -w data-pipeline
+      - working-directory: data-pipeline
+        run: |
+          node src/fetch.ts && node src/build.ts && node src/verify.ts && node src/package.ts
+          v=$(node -p "require('./out/release/manifest.json').version")
+          tag="data-$v-${GITHUB_SHA::7}"
+          { echo "Text packs $v, built from tipitaka.lk @ $(node -p "require('./sources.lock.json').tipitakaLk.commit")."; echo;
+            echo "Pāḷi text and Sinhala translation: Buddha Jayanti Tripiṭaka, from tipitaka.lk (CC BY-ND 4.0). Stored verbatim."; echo;
+            cat out/size-report.md; } > notes.md
+          gh release create "$tag" out/release/* --title "Text packs $v" --notes-file notes.md --latest

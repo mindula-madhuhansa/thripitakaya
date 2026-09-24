@@ -1,0 +1,21 @@
+{
+  "_about": "Checked by verify. 'leaves' = tree nodes with no children under the node; 'children' = direct children; 'gatha' = verse segments. Canonical where BJT's structure matches; otherwise BJT's own number, locked so upstream changes get flagged.",
+  "vp": { "children": 5, "note": "Vinaya: 5 books" },
+  "ap": { "children": 7, "note": "Abhidhamma: 7 books" },
+  "dn": { "leaves": 34 },
+  "mn": { "leaves": 152 },
+  "sn": { "leaves": 2190, "note": "BJT count; 56 saṃyuttas across 5 vaggas (11+9+13+10+12)" },
+  "sn-1": { "children": 11 }, "sn-2": { "children": 9 }, "sn-3": { "children": 13 }, "sn-4": { "children": 10 }, "sn-5": { "children": 12 },
+  "an": { "children": 11, "leaves": 1849, "note": "11 nipātas; sutta total is BJT's" },
+  "kn": { "children": 18 },
+  "kn-khp": { "leaves": 9 },
+  "kn-dhp": { "children": 26, "gatha": 433, "note": "26 vaggas. Canonical 423 verses; BJT has 433 verse entries" },
+  "kn-ud": { "leaves": 80 },
+  "kn-iti": { "leaves": 112 },
+  "kn-snp": { "children": 5, "leaves": 72 },
+  "kn-vv": { "leaves": 85 },
+  "kn-pv": { "leaves": 51 },
+  "kn-thag": { "leaves": 264 },
+  "kn-thig": { "leaves": 73 },
+  "kn-jat": { "leaves": 583, "note": "547 stories; BJT splits the long Mahānipāta jātakas into sections" }
+}

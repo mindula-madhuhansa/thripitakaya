@@ -1,0 +1,11 @@
+{
+  "name": "@thripitakaya/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "node src/fold.check.ts && node src/translit.check.ts"
+  }
+}

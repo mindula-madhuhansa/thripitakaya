@@ -1,7 +1,7 @@
 // Scripture content API used by every screen. Today it reads the bundled SAMPLE (./sample.ts).
 // These bodies later become SQLite queries over core.db + downloaded packs; the signatures stay.
 import { TREE, SN_1_8, DICT, PACKS as SAMPLE_PACKS } from './sample';
-import { findFolded, fold } from './fold';
+import { findFolded, fold } from '@thripitakaya/shared';
 
 export const IS_SAMPLE = true;
 

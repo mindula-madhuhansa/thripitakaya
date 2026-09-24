@@ -1,0 +1,17 @@
+{
+  "name": "thripitakaya-monorepo",
+  "private": true,
+  "license": "GPL-3.0-or-later",
+  "workspaces": [
+    "apps/mobile",
+    "packages/shared",
+    "data-pipeline"
+  ],
+  "scripts": {
+    "check": "npm run check -w @thripitakaya/shared",
+    "data": "npm run all -w data-pipeline"
+  },
+  "overrides": {
+    "react": "19.2.3"
+  }
+}

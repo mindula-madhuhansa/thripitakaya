@@ -7,6 +7,7 @@
     "@expo-google-fonts/gentium-book-plus": "^0.4.0",
     "@expo-google-fonts/noto-serif": "^0.4.2",
     "@expo-google-fonts/noto-serif-sinhala": "^0.4.2",
+    "@thripitakaya/shared": "*",
     "expo": "~57.0.24",
     "expo-clipboard": "~57.0.2",
     "expo-constants": "~57.0.19",
@@ -30,8 +31,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit",
-    "check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON src/data/fold.check.ts"
+    "typecheck": "tsc --noEmit"
   },
   "private": true,
   "license": "GPL-3.0-or-later"

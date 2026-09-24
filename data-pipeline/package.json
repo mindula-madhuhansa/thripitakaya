@@ -1,0 +1,21 @@
+{
+  "name": "data-pipeline",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "description": "Builds the app's text packs from tipitaka.lk (verbatim) and verifies them",
+  "scripts": {
+    "fetch": "node src/fetch.ts",
+    "build": "node src/build.ts",
+    "verify": "node src/verify.ts",
+    "package": "node src/package.ts",
+    "all": "node src/fetch.ts && node src/build.ts && node src/verify.ts && node src/package.ts"
+  },
+  "dependencies": {
+    "@thripitakaya/shared": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0"
+  }
+}

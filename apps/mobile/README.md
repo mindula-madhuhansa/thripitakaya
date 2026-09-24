@@ -8,7 +8,7 @@ A free, offline Tipiṭaka reader in Pāḷi, Sinhala and English. Dhamma Dāna:
 npm install
 npx expo start        # scan the QR code with Expo Go (Android) or the Camera app (iOS)
 npm run typecheck
-npm run check         # search-folding self-check
+npm run check         # (repo root) search + script-conversion self-checks
 ```
 
 ## Layout
