@@ -1,0 +1,13 @@
+node_modules/
+.DS_Store
+*.log
+# pipeline build output and downloaded sources (rebuilt from sources.lock.json)
+data-pipeline/out/
+data-pipeline/cache/
+# planning and design material stays local
+docs/
+design/
+# AI-tool config stays local
+.claude/
+CLAUDE.md
+AGENTS.md

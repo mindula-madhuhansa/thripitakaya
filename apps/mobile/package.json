@@ -1,0 +1,38 @@
+{
+  "name": "thripitakaya",
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "dependencies": {
+    "@expo-google-fonts/abhaya-libre": "^0.4.1",
+    "@expo-google-fonts/gentium-book-plus": "^0.4.0",
+    "@expo-google-fonts/noto-serif": "^0.4.2",
+    "@expo-google-fonts/noto-serif-sinhala": "^0.4.2",
+    "expo": "~57.0.24",
+    "expo-clipboard": "~57.0.2",
+    "expo-constants": "~57.0.19",
+    "expo-font": "~57.0.4",
+    "expo-linking": "~57.0.10",
+    "expo-router": "~57.0.22",
+    "expo-splash-screen": "~57.0.9",
+    "expo-sqlite": "~57.0.3",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON src/data/fold.check.ts"
+  },
+  "private": true,
+  "license": "GPL-3.0-or-later"
+}
