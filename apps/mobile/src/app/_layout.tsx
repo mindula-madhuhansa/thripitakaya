@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { Text, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
@@ -30,11 +30,12 @@ export default function Root() {
     Sym1: require('../../assets/fonts/MaterialSymbolsRounded-Fill1.ttf'),
   });
   const s = useSettings(), c = useColors();
-  const [dbReady, setDbReady] = useState(false);
-  useEffect(() => { initContent().then(() => setDbReady(true)); }, []);
-  const ready = (loaded || !!error) && dbReady;
+  const [dbReady, setDbReady] = useState(false), [dbError, setDbError] = useState('');
+  useEffect(() => { initContent().then(() => setDbReady(true), e => setDbError(String(e?.message ?? e))); }, []);
+  const ready = (loaded || !!error) && (dbReady || !!dbError);
   useEffect(() => { if (ready) SplashScreen.hideAsync(); }, [ready]);
   if (!ready) return null;
+  if (dbError) return <View style={{ flex: 1, justifyContent: 'center', padding: 32, backgroundColor: c.bg }}><Text style={{ color: c.ink, fontSize: 16 }}>{dbError}</Text></View>;
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>

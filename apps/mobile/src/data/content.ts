@@ -10,6 +10,8 @@ let core: SQLiteDatabase;
 export async function initContent() {
   await importDatabaseFromAssetAsync('core.db', { assetId: require('../../assets/db/core.db'), forceOverwrite: true });
   core = openDatabaseSync('core.db');
+  if (!core.getFirstSync(`SELECT 1 FROM sqlite_master WHERE name = 'segment'`))
+    throw new Error('core.db has no texts. Run `npm run data` at the repo root, then restart with `npx expo start -c`.');
 }
 const dbFor = (pack: string) => (pack === 'core' ? core : packDb(pack));
 const allDbs = () => [core, ...PACKS.map(p => packDb(p.id)).filter((d): d is SQLiteDatabase => !!d)];

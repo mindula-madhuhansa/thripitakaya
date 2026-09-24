@@ -1,9 +1,11 @@
 // Downloadable text packs: one SQLite file per collection, published as GitHub Release assets with manifest.json.
-// Install = download .db.gz → check sha256 → gunzip in chunks to <id>.db.tmp → swap in. The old pack stays usable
-// until the new one is complete, so a failed or cancelled download never leaves a broken pack.
+// Install = download .db.gz → check sha256 → gunzip in chunks to a cache file → expo-sqlite copies it into its own
+// database folder. expo-sqlite does that copy natively, so we never convert between file URIs and SQLite paths
+// (Expo Go's percent-encoded folder names made hand conversion open an empty database at the wrong path).
 import { useSyncExternalStore } from 'react';
 import { Directory, File, Paths } from 'expo-file-system';
-import { openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
+import { deleteDatabaseSync, importDatabaseFromAssetAsync, openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
+import Storage from 'expo-sqlite/kv-store';
 import * as Crypto from 'expo-crypto';
 import { Gunzip } from 'fflate';
 
@@ -29,22 +31,37 @@ const subs = new Set<() => void>();
 const set = (patch: Partial<State>) => { state = { ...state, ...patch, v: state.v + 1 }; subs.forEach(f => f()); };
 export const usePacks = () => useSyncExternalStore(f => { subs.add(f); return () => { subs.delete(f); }; }, () => state);
 
-// --- files
-const DIR = new Directory(Paths.document, 'packs');
-const dirPath = () => decodeURIComponent(DIR.uri.replace(/^file:\/\//, ''));
-const dbFile = (id: string) => new File(DIR, `${id}.db`);
+// --- installed packs: recorded in expo-sqlite's key-value store, never inferred from file paths
+type Installed = Record<string, { version: string; bytes: number }>;
+const KEY = 'installed-packs';
+let installed: Installed = JSON.parse(Storage.getItemSync(KEY) ?? '{}');
+const save = () => Storage.setItemSync(KEY, JSON.stringify(installed));
+const dbName = (id: string) => `pack-${id}.db`;
 const open = new Map<string, SQLiteDatabase>();
 
-export const isInstalled = (id: string) => dbFile(id).exists;
+// the first build kept packs under documents/packs; that location is no longer used
+try { const old = new Directory(Paths.document, 'packs'); if (old.exists) old.delete(); } catch { /* nothing to clean */ }
+
+export const isInstalled = (id: string) => id in installed;
+export const installedVersion = (id: string) => installed[id]?.version;
+export const installedBytes = () => Object.values(installed).reduce((s, p) => s + p.bytes, 0);
+
 export function packDb(id: string): SQLiteDatabase | undefined {
   if (!isInstalled(id)) return;
   let db = open.get(id);
-  if (!db) { db = openDatabaseSync(`${id}.db`, {}, dirPath()); open.set(id, db); }
+  if (!db) {
+    db = openDatabaseSync(dbName(id));
+    if (!db.getFirstSync(`SELECT 1 FROM sqlite_master WHERE name = 'segment'`)) {
+      // missing or damaged file: forget it so Settings offers the download again, rather than crashing
+      db.closeSync(); try { deleteDatabaseSync(dbName(id)); } catch { /* already gone */ }
+      delete installed[id]; save();
+      set({ error: `${id}: the downloaded file was damaged, please download it again` });
+      return;
+    }
+    open.set(id, db);
+  }
   return db;
 }
-export const installedVersion = (id: string) =>
-  packDb(id)?.getFirstSync<{ value: string }>(`SELECT value FROM meta WHERE key = 'version'`)?.value;
-export const installedBytes = () => PACKS.reduce((s, p) => s + (isInstalled(p.id) ? dbFile(p.id).size : 0), 0);
 
 // --- network: a plain GET, no identifiers sent
 export async function loadManifest(): Promise<Manifest> {
@@ -65,13 +82,12 @@ const hex = (b: ArrayBuffer) => Array.from(new Uint8Array(b), x => x.toString(16
 export async function install(id: string) {
   if (id in state.progress) return;
   progress(id, 0);
-  const gz = new File(Paths.cache, `${id}.db.gz`), tmp = new File(DIR, `${id}.db.tmp`);
+  const gz = new File(Paths.cache, `${id}.db.gz`), tmp = new File(Paths.cache, `${id}.db`);
   try {
     const m = state.manifest ?? await loadManifest();
     const p = m.packs.find(x => x.id === id);
     if (!p) throw new Error('Not in the latest release');
     if (p.schema_version > SCHEMA_VERSION) throw new Error('Update the app to get this text');
-    DIR.create({ intermediates: true, idempotent: true });
 
     await File.downloadFileAsync(RELEASES + p.file, gz, {
       idempotent: true, onProgress: ({ bytesWritten, totalBytes }) => progress(id, 0.9 * bytesWritten / (totalBytes > 0 ? totalBytes : p.bytes)),
@@ -91,21 +107,24 @@ export async function install(id: string) {
     }
     h.close();
 
+    // swap in: close the old copy, then let expo-sqlite copy the new file into its database folder
     open.get(id)?.closeSync(); open.delete(id);
-    tmp.moveSync(dbFile(id), { overwrite: true });
+    await importDatabaseFromAssetAsync(dbName(id), { assetId: tmp.uri as unknown as number, forceOverwrite: true });
+    installed[id] = { version: p.version, bytes: p.db_bytes }; save();
     set({ error: undefined });
   } catch (e) {
-    if (tmp.exists) tmp.delete();
     set({ error: `${id}: ${(e as Error).message}` });
     throw e;
   } finally {
     if (gz.exists) gz.delete();
+    if (tmp.exists) tmp.delete();
     progress(id, undefined);
   }
 }
 
 export function remove(id: string) {
   open.get(id)?.closeSync(); open.delete(id);
-  if (isInstalled(id)) dbFile(id).delete();
+  try { deleteDatabaseSync(dbName(id)); } catch { /* already gone */ }
+  delete installed[id]; save();
   set({});
 }
