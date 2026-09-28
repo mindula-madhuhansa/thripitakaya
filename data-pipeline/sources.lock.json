@@ -1,11 +1,11 @@
 {
   "tipitakaLk": {
     "repo": "pathnirvana/tipitaka.lk",
-    "commit": "8d7eefc2d1263916494171ca395778479f5d67cb",
-    "date": "2026-09-23T08:51:46Z",
+    "commit": "83dcf857dbf8491b67ffd9f2234ae16c9c85b6df",
+    "date": "2026-09-28T05:16:39Z",
     "files": {
       "an-1.json": "bea3d3bc68950a55c3ef9d6b296f74ae08d21bc112b0a21553386864a57f9cf2",
-      "an-10-2.json": "f113931b7a9a092934d1543d36fe1e0a877490b652daf932ee304d721ca9230e",
+      "an-10-2.json": "78388a3f773bc89524d89ec869a59b931f3027401d0d3d0d20f5c543ad19a806",
       "an-10-3.json": "afe2901ba48e27d7bcffefc35582951b00682d249f9013cee1f64f052592e6eb",
       "an-10-4.json": "579b1beb50daf27e23d72b9377a015409adf3b3b59639592667f1a000eddd2b1",
       "an-10-5.json": "2d5e65b467896423c69ac42e4f0319f5fab14d7d09a64320e5a1eb80ffc7a42a",
